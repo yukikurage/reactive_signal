@@ -3,20 +3,16 @@ import gleam/otp/actor
 import gleam/set
 import gleam/list
 import gleam/result
-import gleam/option.{type Option}
 
 /// A message that can be sent to a channel
 type ChannelMessage(s) {
   Close
   Modify(modifier: fn(s) -> s, reply_with: process.Subject(s))
-  Subscribe(new_subscriber: fn(s, process.Subject(process.Subject(Nil))) -> Nil)
+  Subscribe(new_subscriber: fn(s) -> Nil)
 }
 
 type Subscription(s) {
-  Subscription(
-    new_subscriber: fn(s, process.Subject(process.Subject(Nil))) -> Nil,
-    subject: Option(process.Subject(Nil)),
-  )
+  Subscription(new_subscriber: fn(s) -> Nil, pid: process.Pid)
 }
 
 type ChannelActorState(s) {
@@ -26,26 +22,6 @@ type ChannelActorState(s) {
 /// A variable that can be subscribed
 pub opaque type Channel(s) {
   Channel(subject: process.Subject(ChannelMessage(s)))
-}
-
-fn start_subscriber_and_get_subject(
-  process_fn: fn(s, process.Subject(process.Subject(Nil))) -> Nil,
-  initial_value: s,
-  is_linked,
-) -> Option(process.Subject(Nil)) {
-  let subject = process.new_subject()
-  let child =
-    process.start(fn() { process_fn(initial_value, subject) }, is_linked)
-  let monitor = process.monitor_process(child)
-  let selector =
-    process.new_selector()
-    |> process.selecting(subject, Ok)
-    |> process.selecting_process_down(monitor, Error)
-  let opt_sbj =
-    process.select_forever(selector)
-    |> option.from_result
-  process.demonitor_process(monitor)
-  opt_sbj
 }
 
 fn start_actor_with_trap(
@@ -96,33 +72,29 @@ pub fn try_write(channel: Channel(s), s) -> Result(Nil, process.CallError(s)) {
 fn channel_handler(msg: ChannelMessage(s), state: ChannelActorState(s)) {
   case msg {
     Close -> {
+      // Clean up all subscriptions
       state.subscriptions
       |> set.to_list()
-      |> list.each(fn(subscription) {
-        subscription.subject
-        |> option.map(fn(sbj) { process.send(sbj, Nil) })
-      })
+      |> list.each(fn(subscription) { process.send_exit(subscription.pid) })
 
       actor.Stop(process.Normal)
     }
     Modify(f, reply_with) -> {
       let new_value = f(state.value)
+
+      // Clean up all subscriptions and create new subscriptions
       let new_subscriptions =
         state.subscriptions
         |> set.to_list()
         |> list.map(fn(subscription) {
-          // 副作用の実行に map を使う良くない例です
-          subscription.subject
-          |> option.map(fn(sbj) { process.send(sbj, Nil) })
+          process.send_exit(subscription.pid)
 
-          let new_sbj =
-            start_subscriber_and_get_subject(
-              subscription.new_subscriber,
-              new_value,
+          let pid =
+            process.start(
+              fn() { subscription.new_subscriber(new_value) },
               False,
             )
-
-          Subscription(subscription.new_subscriber, new_sbj)
+          Subscription(subscription.new_subscriber, pid)
         })
         |> set.from_list()
 
@@ -133,10 +105,9 @@ fn channel_handler(msg: ChannelMessage(s), state: ChannelActorState(s)) {
       ))
     }
     Subscribe(new_subscriber) -> {
-      let new_sbj =
-        start_subscriber_and_get_subject(new_subscriber, state.value, False)
+      let pid = process.start(fn() { new_subscriber(state.value) }, False)
 
-      let subscription = Subscription(new_subscriber, new_sbj)
+      let subscription = Subscription(new_subscriber, pid)
 
       actor.continue(ChannelActorState(
         value: state.value,
@@ -159,24 +130,17 @@ pub fn new(initial_value: s) {
   Channel(sbj)
 }
 
-/// Subscribe to a channel by function (as a subscriber process) which takes subject of subject as argument.
-/// The subscriber process can catch the next value change of the channel by creating a new subject and sending it to parent process through the argument and then waiting for the creatied subject.
-pub fn subscribe_with_ack(
-  channel: Channel(s),
-  new_subscriber: fn(s, process.Subject(process.Subject(Nil))) -> Nil,
-) -> Nil {
-  actor.send(channel.subject, Subscribe(new_subscriber))
-}
-
-/// Subscribe to a channel with a cleaner callback
-pub fn subscribe_with_cleaner(
-  channel: Channel(s),
-  new_subscriber: fn(s, process.Subject(process.Subject(Nil))) -> Nil,
-) -> Nil {
-  actor.send(channel.subject, Subscribe(new_subscriber))
-}
-
 /// Subscribe to a channel
+/// Subscriber is start as a new process, and exit when the next value is published, or parent process is exit.
 pub fn subscribe(channel: Channel(s), new_subscriber: fn(s) -> Nil) -> Nil {
-  subscribe_with_cleaner(channel, fn(value, _) { new_subscriber(value) })
+  actor.send(channel.subject, Subscribe(new_subscriber))
+}
+
+/// Subscribe to a channel by Subject.
+/// Subject will receive messages when the channel value is updated.
+pub fn subscribe_from_subject(
+  channel: Channel(s),
+  subscriber_subject: process.Subject(s),
+) -> Nil {
+  subscribe(channel, fn(value) { process.send(subscriber_subject, value) })
 }
