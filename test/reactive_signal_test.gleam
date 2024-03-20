@@ -37,10 +37,9 @@ pub fn channel_test() {
   }
 
   let logger = process.new_subject()
-  let pid = process.start(fn() { new_app(logger) }, False)
+  process.start(fn() { new_app(logger) }, False)
 
   process.sleep(100)
-  process.send_exit(pid)
 
   process.receive(logger, 10)
   |> should.equal(Ok("Listened:0"))
@@ -127,10 +126,7 @@ pub fn signal_test() {
   }
 
   let logger = process.new_subject()
-  let pid = process.start(fn() { new_app(logger) }, False)
-
-  process.sleep(100)
-  process.send_exit(pid)
+  new_app(logger)
 
   process.receive(logger, 10)
   |> should.equal(Ok("Listened:0"))
