@@ -119,9 +119,7 @@ pub fn signal_test() {
       signal.pure(x + y)
     }
     signal.subscribe(sig3, new_listener(logger))
-    process.sleep(10)
     channel.write(chn, 1)
-    process.sleep(10)
     channel.write(chn2, 1)
   }
 

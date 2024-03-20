@@ -7,7 +7,7 @@ import gleam/result
 
 type SubscriberMessage(s) {
   Connect(Channel(s), reply_with: process.Subject(Nil))
-  Change(s)
+  Change(s, reply_with: process.Subject(Nil))
   Terminate
 }
 
@@ -84,7 +84,7 @@ fn channel_handler(msg: ChannelMessage(s), state: ChannelActorState(s)) {
       state.subscribers
       |> dict.values()
       |> list.each(fn(subscriber) {
-        process.send(subscriber, Change(new_value))
+        process.call(subscriber, fn(sbj) { Change(new_value, sbj) }, 5000)
       })
 
       process.send(reply_with, new_value)
@@ -206,7 +206,7 @@ fn subscriber_handler(msg: SubscriberMessage(s), state: SubscriberActorState(s))
         |> process.selecting_trapped_exits(fn(_) { Terminate }),
       )
     }
-    Change(value) -> {
+    Change(value, reply_with) -> {
       // 前回の terminate を呼ぶ
       state.prev_listener_terminate()
       // Listener を走らせ、Subject を取得
@@ -223,6 +223,8 @@ fn subscriber_handler(msg: SubscriberMessage(s), state: SubscriberActorState(s))
           prev_listener_terminate: prev_listener_terminate,
           unsubscribe: state.unsubscribe,
         )
+
+      process.send(reply_with, Nil)
       actor.continue(new_state)
     }
     Terminate -> {
