@@ -4,8 +4,7 @@ import gleam/int
 import gleam/erlang/process.{type Subject}
 import reactive_signal/channel
 import reactive_signal/signal
-import gleam/list
-import gleam/set.{type Set}
+import gleam/set
 
 pub fn main() {
   // channel_test()
@@ -21,23 +20,16 @@ pub fn hello_world_test() {
 pub fn channel_test() {
   // リスナー Actor
   let new_listener = fn(logger) {
-    fn(value) {
+    fn(value, wait_next) {
       process.send(logger, "Listened:" <> int.to_string(value))
-
-      process.trap_exits(True)
-
-      let selector =
-        process.new_selector()
-        |> process.selecting_trapped_exits(fn(_) { Nil })
-
-      process.select_forever(selector)
+      wait_next()
       process.send(logger, "Cleaned:" <> int.to_string(value))
     }
   }
 
   let new_app = fn(logger: Subject(String)) {
     let chn = channel.new(0)
-    channel.subscribe(chn, new_listener(logger))
+    channel.subscribe_with_wait_next(chn, new_listener(logger))
     process.sleep(10)
     channel.write(chn, 1)
     process.sleep(10)
@@ -143,12 +135,6 @@ pub fn signal_test() {
   process.receive(logger, 10)
   |> should.equal(Ok("Listened:0"))
 
-  process.receive(logger, 10)
-  |> should.equal(Ok("Listened:1"))
-
-  // これ多分以前の subscribe が解除できて無い
-  // 親プロセスで全部 subscribe してそうなのでそれはそう
-  // 子プロセスに切る
   process.receive(logger, 10)
   |> should.equal(Ok("Listened:1"))
 
