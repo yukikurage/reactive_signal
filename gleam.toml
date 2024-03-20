@@ -4,9 +4,9 @@ version = "0.0.1"
 # Fill out these fields if you intend to generate HTML documentation or publish
 # your project to the Hex package manager.
 #
-# description = ""
-# licences = ["Apache-2.0"]
-# repository = { type = "github", user = "username", repo = "project" }
+description = "A Gleam library for cross-process reactive signal"
+licences = ["MIT"]
+repository = { type = "github", user = "yukikurage", repo = "reactive_signal" }
 # links = [{ title = "Website", href = "https://gleam.run" }]
 #
 # For a full reference of all the available options, you can have a look at
