@@ -8,7 +8,7 @@ pub opaque type Signal(s) {
 
 pub fn from_channel(chn: channel.Channel(s)) -> Signal(s) {
   Signal(subscribe: fn(subscriber) {
-    channel.subscribe_with_wait_subject(chn, subscriber)
+    channel.subscribe_next_subject(chn, subscriber)
   })
 }
 
@@ -21,7 +21,7 @@ pub fn map(sig: Signal(a), f: fn(a) -> b) -> Signal(b) {
 pub fn pure(a) -> Signal(a) {
   Signal(subscribe: fn(subscriber) {
     let chn = channel.new(a)
-    channel.subscribe_with_wait_subject(chn, subscriber)
+    channel.subscribe_next_subject(chn, subscriber)
   })
 }
 

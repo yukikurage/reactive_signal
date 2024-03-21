@@ -29,7 +29,7 @@ pub fn channel_test() {
 
   let new_app = fn(logger: Subject(String)) {
     let chn = channel.new(0)
-    channel.subscribe_with_wait_next(chn, new_listener(logger))
+    channel.subscribe_next_function(chn, new_listener(logger))
     process.sleep(10)
     channel.write(chn, 1)
     process.sleep(10)

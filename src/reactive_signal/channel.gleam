@@ -238,7 +238,7 @@ pub fn new(initial_value: s) {
 
 /// Subscribe to a channel
 /// Subscriber is start as a new process, and exit when the next value is published, or parent process is exit.
-pub fn subscribe_with_wait_subject(
+pub fn subscribe_next_subject(
   channel: Channel(s),
   new_subscriber: fn(s, process.Subject(Nil)) -> Nil,
 ) -> Nil {
@@ -260,26 +260,26 @@ pub fn subscribe_with_wait_subject(
 
 /// Subscribe to a channel
 /// Subscriber is start as a new process, and exit when the next value is published, or parent process is exit.
-pub fn subscribe_with_wait_next(
+pub fn subscribe_next_function(
   channel: Channel(s),
-  new_subscriber_with_wait_next: fn(s, fn() -> Nil) -> Nil,
+  new_subscriber: fn(s, fn() -> Nil) -> Nil,
 ) -> Nil {
-  let new_subscriber = fn(value, sbj) {
+  let new_subscriber_sub = fn(value, sbj) {
     let wait_next = fn() {
       process.select_forever(
         process.new_selector()
         |> process.selecting(sbj, fn(_) { Nil }),
       )
     }
-    new_subscriber_with_wait_next(value, wait_next)
+    new_subscriber(value, wait_next)
   }
-  subscribe_with_wait_subject(channel, new_subscriber)
+  subscribe_next_subject(channel, new_subscriber_sub)
 }
 
 /// Subscribe to a channel
 /// Subscriber is start as a new process, and exit when the next value is published, or parent process is exit.
 pub fn subscribe(channel: Channel(s), new_subscriber: fn(s) -> Nil) -> Nil {
-  subscribe_with_wait_next(channel, fn(value, _) { new_subscriber(value) })
+  subscribe_next_function(channel, fn(value, _) { new_subscriber(value) })
 }
 
 /// Subscribe to a channel by Subject.
