@@ -11,9 +11,10 @@ type SubscriberMessage(s) {
 
 type SubscriberActorState(s) {
   SubscriberActorState(
-    new_listener: fn(s, fn() -> Nil) -> Nil,
-    prev_listener_terminate: fn() -> Nil,
-    unsubscribe: fn() -> Nil,
+    new_listener: fn(s, process.Subject(Nil)) -> Nil,
+    listener_wait_subject: process.Subject(Nil),
+    channel: Channel(s),
+    dict_ref: erlang.Reference,
   )
 }
 
@@ -130,15 +131,7 @@ fn start_listener_and_get_wait_subject(new_listener, value) {
     let subject = process.new_subject()
     // ack を通して親に渡す -> child_subject
     process.send(ack, subject)
-
-    // wait_next 関数を作る　subject が発火するまで待つ
-    let wait_next = fn() {
-      let selector =
-        process.new_selector()
-        |> process.selecting(subject, fn(_) { Nil })
-      process.select_forever(selector)
-    }
-    new_listener(value, wait_next)
+    new_listener(value, subject)
   }
   let ack = process.new_subject()
   // Listener プロセスの作成
@@ -168,18 +161,12 @@ fn subscriber_initializer(chn: Channel(s), new_listener) {
       let listener_wait_subject =
         start_listener_and_get_wait_subject(new_listener, current_value)
 
-      // terminate 関数は次回更新時に呼ばれる
-      let prev_listener_terminate = fn() {
-        process.send(listener_wait_subject, Nil)
-      }
-
-      let unsubscribe = fn() { process.send(chn.subject, Unsubscribe(ref)) }
-
       let new_state =
         SubscriberActorState(
           new_listener: new_listener,
-          prev_listener_terminate: prev_listener_terminate,
-          unsubscribe: unsubscribe,
+          listener_wait_subject: listener_wait_subject,
+          channel: chn,
+          dict_ref: ref,
         )
 
       let new_selector =
@@ -197,21 +184,18 @@ fn subscriber_initializer(chn: Channel(s), new_listener) {
 fn subscriber_handler(msg: SubscriberMessage(s), state: SubscriberActorState(s)) {
   case msg {
     Change(value) -> {
-      // 前回の terminate を呼ぶ
-      state.prev_listener_terminate()
+      // 前回の wait subject に Nil を送信
+      process.send(state.listener_wait_subject, Nil)
       // Listener を走らせ、Subject を取得
       let listener_wait_subject =
         start_listener_and_get_wait_subject(state.new_listener, value)
-      // terminate 関数は次回更新時に呼ばれる
-      let prev_listener_terminate = fn() {
-        process.send(listener_wait_subject, Nil)
-      }
 
       let new_state =
         SubscriberActorState(
           new_listener: state.new_listener,
-          prev_listener_terminate: prev_listener_terminate,
-          unsubscribe: state.unsubscribe,
+          listener_wait_subject: listener_wait_subject,
+          channel: state.channel,
+          dict_ref: state.dict_ref,
         )
 
       actor.continue(new_state)
@@ -219,9 +203,9 @@ fn subscriber_handler(msg: SubscriberMessage(s), state: SubscriberActorState(s))
     Terminate -> {
       // サブスクライバが終了するときの処理
       // まずは listener の terminate を呼ぶ
-      state.prev_listener_terminate()
+      process.send(state.listener_wait_subject, Nil)
       // unsubscribe を呼ぶ
-      state.unsubscribe()
+      process.send(state.channel.subject, Unsubscribe(state.dict_ref))
       // 以上
       actor.Stop(process.Normal)
     }
@@ -254,9 +238,9 @@ pub fn new(initial_value: s) {
 
 /// Subscribe to a channel
 /// Subscriber is start as a new process, and exit when the next value is published, or parent process is exit.
-pub fn subscribe_with_wait_next(
+pub fn subscribe_with_wait_subject(
   channel: Channel(s),
-  new_subscriber: fn(s, fn() -> Nil) -> Nil,
+  new_subscriber: fn(s, process.Subject(Nil)) -> Nil,
 ) -> Nil {
   let spec =
     actor.Spec(
@@ -272,6 +256,24 @@ pub fn subscribe_with_wait_next(
       fn(_) { Terminate },
     )
   Nil
+}
+
+/// Subscribe to a channel
+/// Subscriber is start as a new process, and exit when the next value is published, or parent process is exit.
+pub fn subscribe_with_wait_next(
+  channel: Channel(s),
+  new_subscriber_with_wait_next: fn(s, fn() -> Nil) -> Nil,
+) -> Nil {
+  let new_subscriber = fn(value, sbj) {
+    let wait_next = fn() {
+      process.select_forever(
+        process.new_selector()
+        |> process.selecting(sbj, fn(_) { Nil }),
+      )
+    }
+    new_subscriber_with_wait_next(value, wait_next)
+  }
+  subscribe_with_wait_subject(channel, new_subscriber)
 }
 
 /// Subscribe to a channel

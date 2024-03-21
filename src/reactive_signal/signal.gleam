@@ -3,12 +3,12 @@ import gleam/erlang/process
 
 /// Signal is read-only, but chainable Channel.
 pub opaque type Signal(s) {
-  Signal(subscribe: fn(fn(s, fn() -> Nil) -> Nil) -> Nil)
+  Signal(subscribe: fn(fn(s, process.Subject(Nil)) -> Nil) -> Nil)
 }
 
 pub fn from_channel(chn: channel.Channel(s)) -> Signal(s) {
   Signal(subscribe: fn(subscriber) {
-    channel.subscribe_with_wait_next(chn, subscriber)
+    channel.subscribe_with_wait_subject(chn, subscriber)
   })
 }
 
@@ -21,13 +21,13 @@ pub fn map(sig: Signal(a), f: fn(a) -> b) -> Signal(b) {
 pub fn pure(a) -> Signal(a) {
   Signal(subscribe: fn(subscriber) {
     let chn = channel.new(a)
-    channel.subscribe_with_wait_next(chn, subscriber)
+    channel.subscribe_with_wait_subject(chn, subscriber)
   })
 }
 
 pub fn chain(sig: Signal(a), f: fn(a) -> Signal(b)) -> Signal(b) {
   Signal(subscribe: fn(subscriber) {
-    sig.subscribe(fn(x, wait_next) {
+    subscribe_with_wait_next(sig, fn(x, wait_next) {
       f(x).subscribe(subscriber)
       wait_next()
     })
@@ -41,10 +41,27 @@ pub fn new(init) {
 }
 
 /// Subscribe to a channel with a wait_next function, that will wait for the next value to be published.
+pub fn subscribe_with_wait_subject(
+  signal: Signal(s),
+  new_subscriber: fn(s, process.Subject(Nil)) -> Nil,
+) -> Nil {
+  signal.subscribe(new_subscriber)
+}
+
+/// Subscribe to a channel with a wait_next function, that will wait for the next value to be published.
 pub fn subscribe_with_wait_next(
   signal: Signal(s),
-  new_subscriber: fn(s, fn() -> Nil) -> Nil,
+  new_subscriber_with_wait_next: fn(s, fn() -> Nil) -> Nil,
 ) -> Nil {
+  let new_subscriber = fn(value, sbj) {
+    let wait_next = fn() {
+      process.select_forever(
+        process.new_selector()
+        |> process.selecting(sbj, fn(_) { Nil }),
+      )
+    }
+    new_subscriber_with_wait_next(value, wait_next)
+  }
   signal.subscribe(new_subscriber)
 }
 

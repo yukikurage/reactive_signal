@@ -131,12 +131,12 @@ pub fn signal_test() {
   let logger = process.new_subject()
   new_app(logger)
 
-  process.receive(logger, 10)
+  process.receive(logger, 0)
   |> should.equal(Ok("Listened:0"))
 
-  process.receive(logger, 10)
+  process.receive(logger, 0)
   |> should.equal(Ok("Listened:1"))
 
-  process.receive(logger, 10)
+  process.receive(logger, 0)
   |> should.equal(Ok("Listened:2"))
 }
