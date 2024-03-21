@@ -30,7 +30,9 @@ pub fn main() {
     }
     signal.subscribe(sig3, new_listener(logger))
     channel.write(chn, 1)
+    process.sleep(10)
     channel.write(chn2, 1)
+    process.sleep(10)
   }
 
   let logger = process.new_subject()

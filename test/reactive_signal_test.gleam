@@ -34,6 +34,7 @@ pub fn channel_test() {
     channel.write(chn, 1)
     process.sleep(10)
     channel.write(chn, 2)
+    process.sleep(10)
   }
 
   let logger = process.new_subject()
@@ -76,6 +77,7 @@ pub fn nested_channel_test() {
       channel.subscribe(chn, new_listener(logger, value))
       process.sleep(10)
       channel.write(chn, 1)
+      process.sleep(10)
     }
   }
 
@@ -84,6 +86,7 @@ pub fn nested_channel_test() {
     channel.subscribe(chn, new_sub_app(logger))
     process.sleep(100)
     channel.write(chn, 1)
+    process.sleep(10)
   }
 
   let logger = process.new_subject()
@@ -120,7 +123,9 @@ pub fn signal_test() {
     }
     signal.subscribe(sig3, new_listener(logger))
     channel.write(chn, 1)
+    process.sleep(10)
     channel.write(chn2, 1)
+    process.sleep(10)
   }
 
   let logger = process.new_subject()
